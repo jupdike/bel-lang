@@ -1,3 +1,6 @@
+<Row>
+<Col>
+
 # The Bel Language
 
 ### Paul Graham, 12 Oct 2019
@@ -47,7 +50,7 @@ more features than McCarthy's 1960 Lisp, it's still only the product
 of the formal phase. This is not a language you can use to program 
 computers, just as the Lisp in the 1960 paper wasn't. Mainly because, 
 like McCarthy's Lisp, it is not at all concerned with efficiency. 
-When I define append in Bel, I'm saying what append means, not trying 
+When I define `append` in Bel, I'm saying what `append` means, not trying 
 to provide an efficient implementation of it.
 
 Why do this? Why prolong the formal phase? One answer is that it's
@@ -330,8 +333,8 @@ what happens when you do.
 
 ## Bindings and Environments
 
-There are three ways a variable can have a value. It can have a value 
-**globally**, as for example `+` does, meaning that by default it has this 
+There are three ways a variable can have a value. It can have a value **globally**,
+as for example `+` does, meaning that by default it has this 
 value everywhere. Such a variable is said to be *globally bound*, and 
 the set of global bindings is called the *global environment*.
 
@@ -800,7 +803,7 @@ treat it as an abbreviation for
 
     (set n (lit mac (lit clo nil p e)))
 
-The actual def and mac operators are more powerful, but this is as 
+The actual `def` and `mac` operators are more powerful, but this is as 
 much as we need to start with.
 
 Treat an expression in square brackets, e.g.
@@ -830,6 +833,70 @@ list:
 
     > (set y '(c d))
     (c d)
-    > `(a b ,@y e f)
+     > `(a b ,@y e f)
     (a b c d e f)
+</Col>
+</Row>
 
+<Row>
+<Col>
+
+## Bel Source Code Explained
+### The Commentary
+</Col>
+<Col>
+
+## Bel in Bel
+### The Code
+</Col>
+</Row>
+
+
+
+
+<Row>
+<Col>
+
+Now let's look at the source. The first expression defines a function
+no that takes one argument, `x`, and returns the result of using `id` to
+compare it to `nil`. So `no` returns `t` if its argument is `nil`, and `nil` 
+otherwise.
+
+    > (no nil)
+    t
+    > (no 'a)
+    nil
+
+Since `nil` represents both falsity and the empty list, `no` is both
+logical negation and the test for the empty list.
+</Col>
+<Col>
+
+    (def no (x)
+      (id x nil))
+</Col>
+</Row>
+
+
+
+<Row>
+<Col>
+
+The second function, `atom`, returns true [iff](https://en.wikipedia.org/wiki/If_and_only_if) its argument is not a 
+pair. 
+
+    > (atom \a)
+    t
+    > (atom nil)
+    t
+    > (atom 'a)
+    t
+    > (atom '(a))
+    nil
+</Col>
+<Col>
+
+    (def atom (x)
+      (no (id (type x) 'pair)))
+</Col>
+</Row>
