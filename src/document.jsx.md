@@ -2006,8 +2006,6 @@ The function given to `map` here tests whether `x` has a non-`nil` `cdr`,
 and if so returns the `car` of it.
 
 
-## Useful Predicates
-
 <Bel>
 
     (def <dfn>find</dfn> (f xs)
@@ -2021,6 +2019,8 @@ first element of a list that matches some test.
             '("pear" "apple" "grape"))
     "apple"
 
+
+## Useful [Predicates](https://en.wikipedia.org/wiki/Predicate_(mathematical_logic))
 
 <Bel>
 
@@ -2434,7 +2434,505 @@ it causes an error:
     > (safe (car 'a))
     nil
 
+## A Few More Useful Predicates
+
+<Bel>
+
+    (def <dfn>literal</dfn> (e)
+      (or (in e t nil o apply)
+          (in (type e) 'char 'stream)
+          (caris e 'lit)
+          (string e)))
+      
+    (def <dfn>variable</dfn> (e)
+      (if (atom e)
+          (no (literal e))
+          (id (car e) vmark)))
+</Bel>
+
+The next function, `literal`, returns true iff its argument evaluates 
+to itself,
+
+  > (map literal (list nil "foo" car))
+  (t t t)
+
+while `variable` returns true iff its argument is a `variable`, meaning
+an ordinary symbol or a uvar:
+
+    > (map variable (list 'x (uvar) t))
+    (t t nil)
+
+<Bel>
+
+    (def <defn>isa</defn> (name)
+      [begins _ `(lit ,name) id])
+</Bel>
+
+And `isa` is for checking whether something is a particular kind of 
+`lit`. Like `is`, `isa` doesn't do the check, but returns a function that
+does
+
+    > ((isa 'clo) map)
+    t
+
+
 ## Interpreting Bel in Bel
+
+The operators we've defined so far, together with the axioms, will 
+now enable us to define a function that acts as a Bel interpreter: a 
+function that will take any Bel expression as an argument and 
+evaluate it.
+
+(We don't need all the operators we've defined so far to define a Bel 
+interpreter. These are, rather, the minimum set we need to define an 
+interpreter in a way that's not too ugly.)
+
+Much of the code in the interpreter operates on the same set of
+structures, and these always have the same parameter names.
+
+Each thread is a list 
+
+    (s r)
+
+of two stacks: a stack `s` of expressions to be evaluated, and a stack 
+`r` of return values.
+
+Each element of `s` is in turn a list
+
+    (e a)
+
+where `e` is an expression to be evaluated, and `a` is a lexical
+environment consisting of a list of `(var . val)` pairs.
+
+The variable `p` holds a list of all the threads (usually other than 
+the current one).
+
+The other thing we need to pass around in the interpreter is the
+global bindings, which is another environment represented as a list 
+of `(var . val)` pairs. I use the variable `g` for this.
+
+The most common parameter list we'll see is 
+
+    (s r m)
+
+where `s` is the current expression stack, `r` is the current return 
+value stack, and `m` is a list `(p g)` of the other threads and the 
+global bindings.
+
+
+<Bel>
+
+    (def <dfn>bel</dfn> (e (o g globe))
+      (ev (list (list e nil))
+          nil
+          (list nil g)))
+</Bel>
+
+The interpreter itself begins with the function `bel`, which takes an 
+expression e and starts the interpreter running with a single thread 
+in which `e` is to be evaluated. The arguments it sends to `ev` represent 
+the usual `(s r m)` triple. So 
+
+    (list (list e nil))
+
+is an expression stack containing nothing except `e`, to be evaluated 
+in a null environment. The second argument, `nil`, is the return value 
+stack, which is empty because we're not returning from anything. And 
+the third argument is `m`, aka `(p g)`, a list of the other threads 
+(currently `nil`) and an environment to use as the global bindings.
+
+<Bel>
+
+    (def <dfn>ev</dfn> (((e a) . s) r m)
+      (aif (literal e)            (mev s (cons e r) m)
+           (variable e)           (vref e a s r m)
+           (no (proper e))        (sigerr 'malformed s r m)
+           (get (car e) forms id) ((cdr it) (cdr e) a s r m)
+                                  (evcall e a s r m)))
+</Bel>
+
+If we jump ahead a few definitions to `ev`, we come to the core of the 
+interpreter. This function plays the role `eval` did in McCarthy's 
+Lisp. Its parameters implicitly pull an `(e a)` expression-environment 
+pair off the expression stack. There are only five things the 
+expression can be:
+
+1. A literal, in which case we return it.
+
+2. A variable, in which case we call `vref` to look up its value.
+
+3. An improper list, in which case we signal an error.
+
+4. A list beginning with a special form, in which case we call the 
+   associated function stored in forms.
+
+5. An ordinary call, in which case we call `evcall` on it.
+
+I'm going to follow the trail of evaluating a literal to explain some 
+things about how evaluation works, then come back and examine the 
+other cases.
+
+One of the most important things to understand about the 
+interpreter is that it never returns a value till it terminates. 
+The way it implements returning a value in the program it's
+evaluating is not by returning a value itself, but by a recursive 
+call to the interpreter with a shorter expression stack and the 
+return value `cons`ed onto the return stack. And that's what we see 
+happening in the code that runs when e is a literal:
+
+    (mev s (cons e r) m)
+
+That is what returning a value looks like.
+
+<Bel>
+
+    (def <dfn>mev</dfn> (s r (p g))
+      (if (no s)
+          (if p
+              (sched p g)
+              (car r))
+          (sched (if (cdr (binding 'lock s))
+                     (cons (list s r) p)
+                     (snoc p (list s r)))
+                 g)))
+</Bel>
+
+The function `mev` (m = multi-threaded) is what the interpreter calls 
+to continue evaluation after doing something. Its purpose is to check 
+whether interpretation should terminate, and if not, to allow another 
+thread to run.
+
+<Bel>
+
+    (def <dfn>sched</dfn> (((s r) . p) g)
+      (ev s r (list p g)))
+</Bel>
+
+The first thing `mev` does is check if the current thread has run out 
+of work to do. If so, if `s` is `nil`, it checks whether there are other 
+threads in `p`. If there are, it calls `sched` to run one. If not, if 
+this is the only thread and we've just finished it, then it returns 
+whatever's on top of the return value stack as the value of calling 
+the interpreter.
+
+If we haven't finished the current expression stack, then we have to 
+check whether we should stay in this thread or switch to another one. 
+Ordinarily you want to give other threads a chance to run, but 
+sometimes you can't, if you're doing something that requires multiple 
+steps to complete, and in the middle is in an inconsistent state. 
+
+The way a program signals that it doesn't want to be interrupted is 
+by dynamically binding `lock` to a non-nil value. If `lock` is on, we put 
+the current thread on the front of the list of threads, and if not we 
+put it on the end. Since sched always runs the first thread on the 
+list, if we keep the current thread on the front, it keeps running.
+
+<Bel>
+
+    (def <dfn>vref</dfn> (v a s r m)
+      (let g (cadr m)
+        (if (inwhere s)
+            (aif (or (lookup v a s g)
+                    (and (car (inwhere s))
+                          (let cell (cons v nil)
+                            (xdr g (cons cell (cdr g)))
+                            cell)))
+                 (mev (cdr s) (cons (list it 'd) r) m)
+                 (sigerr 'unbound s r m))
+            (aif (lookup v a s g)
+                 (mev s (cons (cdr it) r) m)
+                 (sigerr (list 'unboundb v) s r m)))))
+</Bel>
+
+Now that we've seen how `mev` and `sched` work, let's return to `ev`. If `e` 
+is a variable, we call `vref` to evaluate it. And what `vref` ordinarily 
+does is this:
+
+    (aif (lookup v a s g)
+        (mev s (cons (cdr it) r) m)
+        (sigerr 'unbound s r m))
+
+You may now recognize that kind of call to `mev`: that's returning a 
+value. If the lookup succeeds, it returns the `(var . val)` pair it 
+found, so the value is the `cdr` of it. If `lookup` fails, it returns `nil`,
+in which case we've just encountered a reference to an unbound 
+variable, and we should signal an error.
+
+<Bel>
+
+    (def <dfn>lookup</dfn> (e a s g)
+      (or (binding e s)
+          (get e a id)
+          (get e g id)
+          (case e
+            scope (cons e a)
+            globe (cons e g))))
+</Bel>
+
+Let's skip down to `lookup` and see what it does. It checks, in order, 
+whether the variable has a dynamic binding, a lexical binding, or a 
+global binding. At the end there are special cases for the two 
+variables `globe` and `scope`; for them the interpreter simply "leaks" 
+the corresponding parameter. Leak is an apt metaphor in this 
+situation because data is going from one layer of Bel to another: 
+from the interpreter running in Bel to the Bel program it's 
+evaluating.
+
+<Bel>
+
+    (set <dfn>smark</dfn> (join))
+</Bel>
+
+We use binding to check whether a variable has a dynamic binding. It
+checks by searching the expression stack looking for an entry binding 
+that variable. As we'll see when we get to its definition, `dyn` works 
+by inserting a special entry on the expression stack listing the 
+variable it wants to bind and its value. There are other operators 
+that insert special entries on the expression stack too. These 
+entries are distinguishable from ordinary expressions by beginning 
+with a pair called `smark`.
+
+<Bel>
+
+    (def <dfn>sigerr</dfn> (msg s r m)
+      (aif (binding 'err s)
+           (applyf (cdr it) (list msg) nil s r m)
+           (err 'no-err)))
+      
+    (def <dfn>binding</dfn> (v s)
+      (get v
+           (map caddr (keep [begins _ (list smark 'bind) id]
+                            (map car s)))
+           id))
+</Bel>
+
+While we're here, let's look at `sigerr`. This is how the interpreter
+signals an error. As we saw earlier in the examples of continuations,
+it begins by looking for a dynamic binding for `err`, and if there is
+one, it calls it using `applyf`, which we'll get to later. If there
+isn't a binding for `err`, then there's an `error` in the interpreter 
+itself, and we call `err` about it. 
+
+This sort of code where things happen at two different levels—the
+Bel instance running the interpreter, and the Bel program that
+the interpreter is evaluating—is inevitably a bit confusing, but 
+that comes with the territory when a language is written in itself. 
+For errors, at least, there is a simple rule of thumb: when there's 
+an error in a program you're evaluating, you call `sigerr`, and when 
+there's an error in yourself, you call `err`.
+
+Calling `sigerr` is like a parent reporting that the baby is crying.
+Calling `err` is crying oneself.
+
+But what about the first half of `vref`, the one in which `(inwhere s)`
+returns true? This code is for handling assignments. In Bel, any
+value that lives in a pair can be assigned using `set`. For example,
+
+    > (let x '(a b c)
+        (set (cadr x) 'z)
+        x)
+    (a z c)
+
+This code in `vref` is what makes it happen. It works as follows. When 
+we're in a `set`, another special entry (beginning as usual with `smark`) 
+is put on the stack saying that we're not looking for the value of 
+something, but its location. The function inwhere checks for one of 
+these, and if it finds one, we return not the value we're looking up, 
+but the pair it occurs in, plus either `a` or `d` to say whether it's in 
+the `car` or the `cdr`.
+
+<Bel>
+
+    (def <dfn>inwhere</dfn> (s)
+      (let e (car (car s))
+        (and (begins e (list smark 'loc))
+             (cddr e))))
+</Bel>
+
+New global variables are created implicitly by assigning values to 
+them, and this is where that happens. The special stack entry found 
+by `inwhere` says whether a new global binding should be created (it 
+should be for set, but not for push for example) and if it should, we 
+create a new pair to hold its name and value, and splice it into the 
+global variables.
+
+Notice that in this case the first argument to `mev`, at the end, is 
+`(cdr s)` rather than `s`. We're discarding the special stack entry found 
+by `inwhere`.
+
+Incidentally, this is a case where we need `lock`, because when this 
+new binding is created, the value is `nil` initially. So if code in 
+another thread looked up this variable, there would be a window 
+during which it seemed to have the value `nil`. The code that handles 
+locking is in the definition of `set`, which we'll see later.
+
+    (def <strong>ev</strong> (((e a) . s) r m)
+      (aif (literal e)            (mev s (cons e r) m)
+           (variable e)           (vref e a s r m)
+           (no (proper e))        (sigerr 'malformed s r m)
+           (get (car e) forms id) ((cdr it) (cdr e) a s r m)
+                                  (evcall e a s r m)))
+
+Now back up to `ev`. The next case is when `e` isn't a proper list. We 
+know by this point that `e` is not an atom, because every atom is either a 
+literal or a variable. So `e` must be a list, but we have to make sure 
+it's a proper one. If it isn't we call `sigerr`.
+
+By the next line we know that `e` is a nonempty proper list. So the 
+next question is, is the first element a special form?  The variable 
+`forms` is a list of `(name . function)` pairs telling the interpreter 
+what to do when it encounters an expression beginning with `name`.
+
+<Bel>
+
+    (def <dfn>evmark</dfn> (e a s r m)
+      (case (car e)
+        fut  ((cadr e) s r m)
+        bind (mev s r m)
+        loc  (sigerr 'unfindable s r m)
+        prot (mev (cons (list (cadr e) a)
+                        (fu (s r m) (mev s (cdr r) m))
+                        s)
+                  r
+                  m)
+             (sigerr 'unknown-mark s r m)))
+</Bel>
+
+
+The first of these is `smark`, the pair we created for marking stack 
+entries that are not just ordinary expressions. The initial value of 
+forms
+
+<Bel>
+
+    (set <dfn>forms</dfn> (list (cons smark evmark)))
+</Bel>
+
+means that when the expression we've just taken off the stack 
+begins with smark, we should call `evmark`. And in the definition of 
+`evmark` we see the four types of stack entries we use smark for, each 
+indicated by the symbol that comes after smark in the expression we 
+put on the stack.
+
+One of these, `bind`, we've already talked about. This is what `dyn` puts 
+on the stack to establish a dynamic binding. When we return back 
+through one, all that should happen is that the dynamic binding 
+ceases to exist. The `bind` entry itself is a no-op; we just call 
+`(mev s r m)` and get on with things.
+
+We're also familiar with the idea of a `loc` entry; that's what we were 
+just looking for in `inwhere`. We made a point of removing it from the 
+stack once we'd found it. So if we return up through a `loc` entry, 
+that means we were unable to find a pair to modify, and we should 
+signal an error. E.g.
+
+    > (set \a 5)
+    Error: unfindable
+
+<Bel>
+
+    (mac <dfn>fu</dfn> args
+      `(list (list smark 'fut (fn ,@args)) nil))
+</Bel>
+
+A `fut` (future) stack entry contains a closure to be called on `(s r m)`.
+The interpreter inserts these when it needs to do 
+something in several steps. This happens so often that there's a 
+special `fu` macro (the resemblance to `fn` is intentional) for creating 
+these closures.
+
+There's one of them in the `prot` clause of `evcall`. A `prot` (protect)
+stack entry means that an expression should be evaluated even when 
+calling a continuation throws control back over it. You'd use this 
+for example to make sure a file you opened eventually got closed. 
+Since these protected expressions aren't supposed to return values, 
+the code for evaluating them includes a `fu` for throwing away the 
+value that gets put onto the return value stack after the expression 
+is evaluated: all this `fu` does is turn a call of the form `(mev s r m)` 
+into `(mev s (cdr r) m)`. We'll learn more about protected expressions 
+when we get to the code for creating them.
+
+## Special Forms
+
+<Bel>
+
+    (mac <dfn>form</dfn> (name parms . body)
+      `(set forms (put ',name ,(formfn parms body) forms)))
+</Bel>
+
+The rest of the special forms are defined using the `form` macro, which 
+runs its arguments through formfn and then puts the result in an 
+entry in forms. Let's start by looking at an example of a special 
+form defined with it.
+
+<Bel>
+
+    (form <dfn>quote</dfn> ((e) a s r m)
+      (mev s (cons e r) m))
+</Bel>
+
+The first is the definition of `quote`, which is 
+about as simple as a special form can get. The first parameter, `(e)`, 
+is the parameter list of the form as it will be called. So `(e)` means 
+that `quote` will take exactly one argument. We call it `e`, for 
+expression, because it won't have been evaluated. The remaining 
+arguments, `a s r m`, represent the lexical environment plus the usual 
+`s r m` state of the world.
+
+The body of the form is a familiar type of call to `mev`, representing
+a return. So this definition says that `quote` takes one argument, `e`, 
+and returns it unevaluated.
+
+<Bel>
+
+    (def <dfn>formfn</dfn> (parms body)
+      (with (v  (uvar)
+             w  (uvar)
+             ps (parameters (car parms)))
+        `(fn ,v
+           (eif ,w (apply (fn ,(car parms) (list ,@ps))
+                          (car ,v))
+                  (apply sigerr 'bad-form (cddr ,v))
+                  (let ,ps ,w
+                     (let ,(cdr parms) (cdr ,v) ,@body))))))
+</Bel>
+
+The definition of `quote` will be transformed by `formfn` into the 
+equivalent of
+
+    (fn v
+      (eif w (apply (fn (e) (list e))
+                    (car v))
+            (apply sigerr 'bad-form (cddr v))
+            (let (e) w
+                (let (a s r m) (cdr v) 
+                  (mev s (cons e r) m)))))
+
+<Bel>
+
+    (def <dfn>parameters</dfn> (p)
+      (if (no p)           nil
+          (variable p)     (list p)
+          (atom p)         (err 'bad-parm)
+          (in (car p) t o) (parameters (cadr p))
+                           (append (parameters (car p))
+                                   (parameters (cdr p)))))
+</Bel>
+
+The test expression in the `eif` accumulates all the form's parameters.
+If an error occurs while doing that, we signal an error. (We know 
+`(cddr v)` will be the familiar `(s r m)`.) Otherwise we bind the 
+parameters and evaluate the body of the form.
+
+The reason we do this in two parts is in case someone calls the form 
+with the wrong arguments. If you're using `form` to define a form, you 
+can (and must) catch all other errors yourself, but you can't catch 
+that one. At least not short of using a single parameter to hold all 
+the arguments, and then teasing them out manually. Since that would 
+make form definitions ugly, the form macro does it for you.
+
+    > (quote a b)
+    Error: bad-form
 
 <Bel></Bel>
 <Bel></Bel>
@@ -2443,3 +2941,5 @@ it causes an error:
 <Bel></Bel>
 <Bel></Bel>
 <Bel></Bel>
+<Bel></Bel>
+
