@@ -1510,3 +1510,350 @@ Then the expansion wraps a `do` around the expressions.
 We haven't seen `do` yet, but it's coming soon. It makes multiple
 expressions into a block of code. 
 
+
+<Bel>
+
+    (set <dfn>vmark</dfn> (join))
+      
+    (def <dfn>uvar</dfn> ()
+      (list vmark))
+</Bel>
+
+Next comes something unusual: `vmark` is set to a newly created pair 
+made by `join`. Missing arguments to primitives default to `nil`, so 
+`(join)` is equivalent to `(join nil nil)`, and when you see a call like 
+this, it's usually for the purpose of creating a fresh pair to mark 
+the identity of something.
+
+Any pair with `vmark` in its `car` is treated by Bel as a variable. The 
+next function, `uvar`, thus returns a new, unique variable each time 
+it's called. The reason we need such a thing is so that when we're
+manipulating user code, we can add variables without worrying they'll 
+accidentally share the names of variables created by users.
+
+
+<Bel>
+
+    (mac <dfn>do</dfn> args
+      (reduce (fn (x y)
+                (list (list 'fn (uvar) y) x))
+              args))
+</Bel>
+
+Now we see the definition of `do`, which we used in the expansion of 
+`fn`. The `do` macro uses nested function calls to represent blocks of 
+code.
+
+Suppose you want to evaluate two expressions in order and then return
+the value of the last.
+
+  e1
+  e2
+
+You can make this happen by embodying `e2` in a function that you then 
+call on `e1`.
+
+    ((fn x e2) e1)
+
+When this expression is evaluated, `e1` will be evaluated first, and 
+its value passed to the function in the car of the call:
+
+    (fn x e2)
+
+Then `e2` will be evaluated, ignoring the value of `e1` passed in the 
+parameter, and its value returned. Result: `e1` and then `e2` get 
+evaluated, as if in a block. (You cannot of course safely use `x` as 
+the parameter in case it occurs within `e2`, but I'll explain how to 
+deal with that in a minute.) 
+
+This technique generalizes to blocks of any size. Here's one with 3 
+expressions:
+
+    ((fn x ((fn x e3) e2)) e1)
+
+You can use `reduce` to generate this kind of expression as follows:
+
+    (def block args
+      (reduce (fn (x y)
+                (list (list 'fn 'x y) x))
+              args))
+      
+    > (block 'e1 'e2 'e3)
+    ((fn x ((fn x e3) e2)) e1)
+
+and this is almost exactly what the `do` macro does. If you look at
+its definition, it's almost identical to that of `block`. 
+
+One difference is that `do` is a macro rather than a function, which
+means that the nested call gets evaluated after it's generated.
+
+The other difference is that we call `uvar` to make the parameter 
+instead of using `x`. We can't safely use any symbol as the parameter
+in case it occurs in one of the expressions in the `do`. Since we're 
+never going to look at the values passed in these function calls, we 
+don't care what parameter we use, so long as it's unique.
+
+<Bel>
+
+    (mac <dfn>let</dfn> (parms val . body)
+      `((fn (,parms) ,@body) ,val))
+</Bel>
+
+If you want to establish a lexical binding for some variable, you do
+it with `let`, which is a very simple macro upon `fn`.
+
+    > (let x 'a 
+        (cons x 'b))
+    (a . b)
+
+Since `let` expands into a fn, you have the full power of Bel parameter 
+lists in the first argument.
+
+    > (let (x . y) '(a b c) 
+        (list x y))
+    (a (b c))
+
+<Bel>
+
+    (mac <dfn>macro</dfn> args
+      `(list 'lit 'mac (fn ,@args)))
+</Bel>
+
+The macro `macro` is analogous to the `fn` macro in that it returns a
+literal macro. You'll rarely use these directly, but you could if you 
+wanted to.
+
+    > ((macro (v) `(set ,v 'a)) x)
+    a
+    > x
+    a
+
+<Bel>
+
+    (mac <dfn>def</dfn> (n . rest)
+      `(set ,n (fn ,@rest)))
+      
+    (mac <dfn>mac</dfn> (n . rest)
+      `(set ,n (macro ,@rest)))
+</Bel>
+
+
+Next we see the definition of `def` itself, which does nothing more
+than `set` its first argument to a `fn` made using the rest of the
+arguments, and also of `mac`, which does the same with macro.
+
+(I like it when I can define new operators as thin, almost trivial
+seeming layers on top of existing operators. It seems a sign of
+orthogonality.)
+
+If you were wondering why `fn` needs two cases-- why we don't just 
+always wrap a `do` around the body-- the reason is that `do` calls 
+`reduce`, which is defined using `def`, which expands into a `fn`. So to 
+avoid an infinite recursion we either have to define `reduce` as a 
+literal function, or make either `fn` or `do` consider the single 
+expression case, and making `fn` do it was the least ugly.
+
+<Bel>
+
+    (mac <dfn>or</dfn> args
+      (if (no args)
+          nil
+          (let v (uvar)
+            `(let ,v ,(car args)
+              (if ,v ,v (or ,@(cdr args)))))))
+</Bel>
+
+Now that we have `let`, we can define `or`, which returns the first 
+non-`nil` value returned by one of its arguments. Like most `or`s in
+programming languages, it only evaluates as many arguments as it
+needs to, which means you can use it for control flow as well as
+logical disjunction.
+
+    > (or 'a (prn 'hello))
+    a
+
+The definition of `or` is the first recursive macro definition we've
+seen. Unless it has no arguments, an `or` will expand into another `or`. 
+This is fine so long as the recursion terminates, which this one 
+will because each time we look at the `cdr` of the list of arguments, 
+which will eventually be `nil`. (Though you could spoof `or` by 
+constructing a circular list and applying `or` to it.)
+
+In effect
+
+    (or foo bar)
+
+expands into
+
+    (let x foo
+      (if x 
+          x
+          (let y bar
+            (if y
+                y
+                nil))))
+
+except that we can't actually use variables like `x` and `y` to hold the 
+values, and instead have to use `uvar`s.
+
+Notice incidentally that the expression above could be optimized
+
+    (let x foo
+      (if x
+          x
+          bar))
+
+but the definition of `or` doesn't try to; like every definition in
+Bel, its purpose is to define what `or` means, not to provide an 
+efficient implementation of it.
+
+In Bel, macros are applyable just like functions are, though if you
+do that you get only the logical aspect of `or` and not the control
+aspect, since in a call to apply the arguments have already all been
+evaluated.
+
+    > (apply or '(nil nil))
+    nil
+    > (apply or '(nil a b))
+    a
+
+<Bel>
+
+    (mac <dfn>and</dfn> args
+      (reduce (fn es (cons 'if es))
+              (or args '(t))))
+</Bel>
+
+The `and` macro is similar in spirit to `or`, but different in its 
+implementation. Whereas `or` uses recursion to generate its expansion, 
+`and` uses `reduce`. Since 
+
+    (and w x y z) 
+
+is equivalent to
+
+    (if w (if x (if y z)))
+
+it's an obvious candidate for `reduce`. 
+
+Notice the function given to reduce has a single parameter. A 
+function given as the first argument to `reduce` will only ever be 
+called with two arguments, so usually such a function will have a 
+list of two parameters, but in this case we just want to `cons` an if 
+onto the front of the arguments each time.
+
+The other interesting thing about `and` is what we do when it has no 
+arguments. While we want (or) to return nil, we want (and) to return 
+`t`. So in the second argument to reduce, we replace an empty `args` with 
+`(t)`.
+
+
+<Bel>
+
+    (def = args
+      (if (no (cdr args))  t
+          (some atom args) (all [id _ (car args)] (cdr args))
+                          (and (apply = (map car args))
+                                (apply = (map cdr args)))))
+</Bel>
+
+The next function, `=`, is the one that programs usually use to test 
+for equality. It returns true iff its arguments are trees of the same 
+shape whose leaves are the same atoms.
+
+    > (id '(a b) '(a b))
+    nil
+    > (= '(a b) '(a b))
+    t
+
+In Bel, everything that's not a symbol, character, or stream is a
+pair. Numbers and strings are pairs, for example. So you'd never
+want to use `id` for comparison unless you were specifically looking
+for identical list structure.
+
+In the definition of `=` we see the first instance of square bracket
+notation.
+
+    (all [id _ (car args)] (cdr args))
+
+This is equivalent to
+
+    (all (fn (x) (id x (car args))) 
+        (cdr args))
+
+I.e., is everything in the `cdr` of `args` `id` to the `car`? You know you
+can use `id` to test equality at this point, because if one of the `args` is
+an atom, they all have to be for them to be `=`, and you can use `id` 
+to test equality of atoms.
+
+If `id` took any number of arguments (it doesn't, because I want axioms
+to be as weak as possible), the preceding `all` expression could have 
+been simply
+
+    (apply id args)
+
+
+<Bel>
+
+    (def <dfn>symbol</dfn> (x) (= (type x) 'symbol))
+      
+    (def <dfn>pair</dfn>   (x) (= (type x) 'pair))
+      
+    (def <dfn>char</dfn>   (x) (= (type x) 'char))
+      
+    (def <dfn>stream</dfn> (x) (= (type x) 'stream))
+</Bel>
+
+The next four functions are predicates for the four types. All use `=` 
+for this test even though all could use `id`. My rule is to use `=`
+unless I specifically need `id`. That way the appearance of `id` is a 
+signal that code is looking for identical structure.
+
+
+<Bel>
+
+    (def <dfn>proper</dfn> (x)
+      (or (no x)
+          (and (pair x) (proper (cdr x)))))
+</Bel>
+
+Then we see `proper`, which tells us whether something is a proper
+list. Informally, a proper list is one that we don't need a dot to
+display.
+
+    > (proper nil)
+    t
+    > (proper '(a . b))
+    nil
+    > (proper '(a b))
+    t
+
+Formally, something is a proper list if it's either `nil` or a pair
+whose `cdr` is a proper list, which is exactly what the definition
+says.
+
+
+<Bel>
+
+    (def <dfn>string</dfn> (x)
+      (and (proper x) (all char x)))
+</Bel>
+
+In Bel, a `proper` list of characters is called a `string`, and has a 
+special notation: zero or more characters within double quotes.
+
+    > (string "foo")
+    t
+
+The next function, `mem`, tests for list membership.
+
+    > (mem 'b '(a b c))
+    (b c)
+    > (mem 'e '(a b c))
+    nil
+    > (mem \a "foobar")
+    "ar"
+
+Since it uses `some`, it returns the rest of the list starting with the 
+thing we're looking for, rather than simply `t`.
+

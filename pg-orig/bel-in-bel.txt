@@ -51,59 +51,59 @@
           `(list 'lit 'clo scope ',parms ',(car body))
           `(list 'lit 'clo scope ',parms '(do ,@body))))
 
-(set vmark (join))
+    (set vmark (join))
 
-(def uvar ()
-  (list vmark))
+    (def uvar ()
+      (list vmark))
 
-(mac do args
-  (reduce (fn (x y)
-            (list (list 'fn (uvar) y) x))
-          args))
+    (mac do args
+      (reduce (fn (x y)
+                (list (list 'fn (uvar) y) x))
+              args))
 
-(mac let (parms val . body)
-  `((fn (,parms) ,@body) ,val))
+    (mac let (parms val . body)
+      `((fn (,parms) ,@body) ,val))
 
-(mac macro args
-  `(list 'lit 'mac (fn ,@args)))
+    (mac macro args
+      `(list 'lit 'mac (fn ,@args)))
 
-(mac def (n . rest)
-  `(set ,n (fn ,@rest)))
+    (mac def (n . rest)
+      `(set ,n (fn ,@rest)))
 
-(mac mac (n . rest)
-  `(set ,n (macro ,@rest)))
+    (mac mac (n . rest)
+      `(set ,n (macro ,@rest)))
 
-(mac or args
-  (if (no args)
-      nil
-      (let v (uvar)
-        `(let ,v ,(car args)
-           (if ,v ,v (or ,@(cdr args)))))))
+    (mac or args
+      (if (no args)
+          nil
+          (let v (uvar)
+            `(let ,v ,(car args)
+              (if ,v ,v (or ,@(cdr args)))))))
 
-(mac and args
-  (reduce (fn es (cons 'if es))
-          (or args '(t))))
+    (mac and args
+      (reduce (fn es (cons 'if es))
+              (or args '(t))))
 
-(def = args
-  (if (no (cdr args))  t
-      (some atom args) (all [id _ (car args)] (cdr args))
-                       (and (apply = (map car args))
-                            (apply = (map cdr args)))))
+    (def = args
+      (if (no (cdr args))  t
+          (some atom args) (all [id _ (car args)] (cdr args))
+                          (and (apply = (map car args))
+                                (apply = (map cdr args)))))
 
-(def symbol (x) (= (type x) 'symbol))
+    (def symbol (x) (= (type x) 'symbol))
 
-(def pair   (x) (= (type x) 'pair))
+    (def pair   (x) (= (type x) 'pair))
 
-(def char   (x) (= (type x) 'char))
+    (def char   (x) (= (type x) 'char))
 
-(def stream (x) (= (type x) 'stream))
+    (def stream (x) (= (type x) 'stream))
 
-(def proper (x)
-  (or (no x)
-      (and (pair x) (proper (cdr x)))))
+    (def proper (x)
+      (or (no x)
+          (and (pair x) (proper (cdr x)))))
 
-(def string (x)
-  (and (proper x) (all char x)))
+    (def string (x)
+      (and (proper x) (all char x)))
 
 (def mem (x ys (o f =))
   (some [f _ x] ys))
