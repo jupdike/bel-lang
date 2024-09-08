@@ -218,3 +218,7 @@ pre code {
   display: inline-block;
 }
 
+h3 {
+  text-transform: uppercase;
+  font-weight: 500;
+}
