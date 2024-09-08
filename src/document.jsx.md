@@ -766,3 +766,70 @@ Starts a new thread in which `x` will be evaluated. Global bindings are
 shared between threads, but not dynamic ones.
 
 
+# Reading the Source
+
+Starting with the foregoing 25 operators, we're going to define more,
+till we can define a Bel interpreter. Then we'll continue, defining
+numbers, I/O, and several other things one needs in programs.
+
+These definition are in the Bel source, which is meant to be read in
+parallel with this guide.
+
+In the Bel source, when you see an expression of the form 
+
+    (set v1 e1 ... vn en)
+
+it means each `vi` is globally bound to the value of `ei`.
+
+In the source I try not to use things before I've defined them, but 
+I've made a handful of exceptions to make the code easier to read.
+
+When you see
+
+    (def n p e)
+
+treat it as an abbreviation for 
+
+    (set n (lit clo nil p e))
+
+and when you see 
+
+    (mac n p e)
+
+treat it as an abbreviation for
+
+    (set n (lit mac (lit clo nil p e)))
+
+The actual def and mac operators are more powerful, but this is as 
+much as we need to start with.
+
+Treat an expression in square brackets, e.g.
+
+    [f _ x]
+
+as an abbreviation for 
+
+    (fn (_) (f _ x))
+
+In Bel, underscore is an ordinary character and `_` is thus an ordinary 
+variable.
+
+Finally, treat an expression with a prepended backquote `(\`)` as a
+quoted list, but with "holes," marked by commas, where evaluation 
+is turned back on again. 
+
+    > (set x 'a)
+    a
+    > `(x ,x y)
+    (x a y)
+    > `(x ,x y ,(+ 1 2))
+    (x a y 3)
+
+You can also use `,@` to get a value spliced into the surrounding
+list:
+
+    > (set y '(c d))
+    (c d)
+    > `(a b ,@y e f)
+    (a b c d e f)
+
