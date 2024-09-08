@@ -786,6 +786,8 @@ it means each `vi` is globally bound to the value of `ei`.
 In the source I try not to use things before I've defined them, but 
 I've made a handful of exceptions to make the code easier to read.
 
+### `def` and `mac` Abbreviations
+
 When you see
 
     (def n p e)
@@ -805,6 +807,8 @@ treat it as an abbreviation for
 The actual `def` and `mac` operators are more powerful, but this is as 
 much as we need to start with.
 
+### Square-Bracket functions
+
 Treat an expression in square brackets, e.g.
 
     [f _ x]
@@ -815,6 +819,8 @@ as an abbreviation for
 
 In Bel, underscore is an ordinary character and `_` is thus an ordinary 
 variable.
+
+### Backquote
 
 Finally, treat an expression with a prepended backquote `(\`)` as a
 quoted list, but with "holes," marked by commas, where evaluation 
@@ -913,6 +919,8 @@ starting from the point where `f` was true of the first element.
 
 Logically, any value except `nil` counts as truth, so why not return 
 the most informative result you can?
+
+### More about `if`
 
 In all and some we see the first use of `if`. Translated into English, 
 the definition of all might be:
@@ -1099,4 +1107,406 @@ called
     (f '(a b c) '(d))
 
 you'll get an error because there is no parameter for `c`.
+
+
+<Bel>
+
+    (def <dfn>append</dfn> args
+      (if (no (cdr args)) (car args)
+          (no (car args)) (apply append (cdr args))
+                          (cons (car (car args))
+                                (apply append (cdr (car args))
+                                              (cdr args)))))
+</Bel>
+
+The next function, `append`, joins lists together:
+
+    > (append '(a b c) '(d e f))
+    (a b c d e f)
+    > (append '(a) nil '(b c) '(d e f))
+    (a b c d e f)
+
+Its definition will be easier to understand if we look first at a 
+two-argument version.
+
+    (def append2 (xs ys)
+      (if (no xs)
+          ys
+          (cons (car xs) (append2 (cdr xs) ys))))
+
+In English, if `xs` is empty, then just return `ys`. Otherwise return the
+result of `cons`ing the first element of `xs` onto `append` of the rest of 
+`xs` and `ys`. I.e. 
+
+    (append2 '(a b c) '(d e f))
+
+becomes
+
+    (cons 'a (append2 '(b c) '(d e f)))
+
+and so on. The definition of append in the Bel source is the same 
+principle applied to any number of arguments.
+
+### More about `apply`
+
+In it we see the first use of `apply`. Like `if`, `apply` is a special
+form, meaning an operator whose behavior has to be defined as a
+special case in the interpreter. Unlike if, apply has a value; it
+evaluates to itself, like t and nil. This lets you use it as an
+argument like an ordinary function. 
+
+Its purpose is in effect to spread out the elements of a list as if 
+they were the arguments in a function call. For example
+
+    (apply f '(a b))
+
+is equivalent to 
+
+    (f 'a 'b)
+
+In the general case `apply` can take one or more arguments, and is 
+equivalent to calling `apply` on the first argument and all the 
+intervening arguments `cons`ed onto the last. I.e.
+
+    (apply f x y z)
+
+is equivalent to
+
+    (apply f (cons x y z))
+
+It's common to use `apply` in functions like `append` that take any 
+number of arguments. Using `apply` is in a sense the converse of using 
+a single parameter to collect multiple arguments.
+
+### Back to `append`
+
+Now let's look at `append`. It takes any number of arguments. 
+Collectively (i.e. as a list) they'll be the value of `args`. If `args` 
+is empty or only has one element, then the result is `(car args)`. We 
+saw the same sort of test in the first clause of `reduce`. That's two
+base cases, and there is also a third: when `args` has more than one
+element but the first element is `nil`. In that case we can ignore it,
+and apply `append` to the rest of `args`.
+
+Finally in the last clause we see the general case. It uses the 
+same strategy we saw in `append2`: `cons` the first element of the
+first argument onto a recursive call to `append` on the rest of the 
+first argument and the remaining arguments. Unlike `append2`, `append` 
+has to make this call using `apply`, because it has a varying number of
+arguments in a list, instead of exactly two.
+
+
+<Bel>
+
+    (def <dfn>snoc</dfn> args
+      (append (car args) (cdr args)))
+       
+    (def <dfn>list</dfn> args
+      (append args nil))
+</Bel>
+
+Once we have append it's easy to define `snoc`, which as its name
+suggests is like a reverse `cons`,
+
+    > (snoc '(a b c) 'd 'e)
+    (a b c d e)
+
+and `list`, which returns a `list` of its arguments.
+
+    > (list)
+    nil
+    > (list 'a)
+    (a)
+    > (list 'a 'b) 
+    (a b)
+
+Or more precisely, returns a newly made list of its arguments. If
+you're wondering why we bother appending `args` to `nil` rather than 
+simply returning it, the reason is that appending a list to `nil` will 
+also copy it.
+
+If we defined list as
+
+    (def list args args)
+
+and it was called thus
+
+    (apply list x)
+
+then the value that list returned would be the same list as `x`–not 
+merely a list with the same elements, but the *same pair*–meaning if
+we modified the value we got from list, we'd also be modifying the 
+object up in the calling code.
+
+<Bel>
+
+    (def <dfn>map</dfn> (f . ls)
+      (if (no ls)       nil
+          (some no ls)  nil
+          (no (cdr ls)) (cons (f (car (car ls)))
+                              (map f (cdr (car ls))))
+                        (cons (apply f (map car ls))
+                              (apply map f (map cdr ls)))))
+</Bel>
+
+After list we see `map`, which in the simplest case returns a list of
+calling its first argument on each element of its second.
+
+    > (map car '((a b) (c d) (e f)))
+    (a c e)
+
+However, `map` can take any number of lists, and calls its first 
+argument on successive sets of elements from the others.
+
+    > (map cons '(a b c) '(1 2 3))
+    ((a . 1) (b . 2) (c . 3))
+
+It stops as soon as one list runs out
+
+    > (map cons '(a b c) '(1 2))
+    ((a . 1) (b . 2))
+
+Like append, `map` is easier to understand if we start with a version 
+that takes exactly two arguments.
+
+    (def map2 (f xs)
+      (if (no xs)
+          nil
+          (cons (f (car xs))
+                (map2 f (cdr xs)))))
+
+If there are no `xs` left, then return `nil`, otherwise `cons f` of the
+first element onto `map2` of `f` and the remaining elements. Pretty 
+simple.
+
+All the additional complexity of `map` comes from the need to take 
+multiple lists. The parameter list becomes `(f . ls)` so that all the 
+lists can be collected in `ls`. We need an additional base case in case 
+there are zero of them. Checking for the end of the list, which in 
+`map2` was
+
+    (no xs)
+
+now becomes 
+
+    (some no ls)
+
+because we stop as soon as any list runs out.
+
+Then we have yet another base case, the one in which we have just one
+list. That's what `map2` does, and not surprisingly, the code is the 
+same as in `map2` except that xs becomes `(car ls)`.
+
+Finally in the general case we call `f` on all the first elements
+(which we collect using `map`) and `cons` that onto `map` of `f` on all the 
+rests of the lists.
+
+Notice that `map` calls itself recursively in two ways: there is the
+usual "do this to the rest of the list" recursive call in the last 
+line. But in the preceding line we also use `(map car ls)` to collect 
+the arguments for `f`. And that's why we need the single-list base 
+case. Without it, we'd get an infinite recursion.
+
+
+<Bel>
+
+    (mac <dfn>fn</dfn> (parms . body)
+      (if (no (cdr body))
+          `(list 'lit 'clo scope ',parms ',(car body))
+          `(list 'lit 'clo scope ',parms '(do ,@body))))
+
+</Bel>
+
+Next comes our first macro, `fn`. There are two concepts to explain 
+first, though: **macros** and **scope**.
+
+### Macros
+
+A **macro** is essentially a function that generates code. I would have 
+liked the first example of a macro to be something simpler, but `fn`
+is the one we need first. So I'll introduce macros using a simpler 
+macro that isn't part of Bel, then explain `fn`.
+
+Here is a very simple macro:
+
+    (mac nilwith (x)
+      (list 'cons nil x))
+
+This definition says that whenever you see an expression like
+
+    (nilwith 'a)
+
+transform it into 
+
+    (cons nil 'a)
+
+and then evaluate that and return its value as the value of the call 
+to nilwith.
+
+    > (nilwith 'a)
+    (nil . a)
+
+So unlike the evaluation of a function call, the evaluation of a 
+macro call has two steps: 
+
+1. First use the definition of the macro to generate an expression, 
+   called the macro's expansion. In the case above the expansion is
+   `(cons nil 'a)`.
+
+2. Then evaluate the expansion and return the result. The expansion 
+   above evaluates to `(nil . a)`.
+
+Beneath the surface, what's going on is quite simple. A macro is in 
+effect (or more precisely, contains) a function that generates 
+expressions. This function is called on the (unevaluated) arguments 
+in the macro call, and whatever it returns is the macro expansion.
+
+For example, the value of `nilwith` will be equivalent to
+
+    (lit mac (lit clo nil (x) (list 'cons nil x))))
+
+If we look at the third element, we see the function that generates 
+expansions
+
+    (lit clo nil (x) (list 'cons nil x))
+
+which looks just like the definition of `nilwith`.
+
+Macros often use `backquote` to make the code that generates
+expressions look as much as possible like the resulting expressions.
+So if you defined `nilwith` you'd probably do it not as we did above
+but as
+
+    (mac nilwith (x)
+      `(cons nil ,x))
+
+### Simpler example: `fn-`
+
+Now let's work our way up to `fn`, starting with the following 
+simplified version:
+
+    (mac fn- (parms expr)
+      `(lit clo nil ,parms ,expr))
+
+This is less powerful than the actual `fn` macro in two ways. 
+
+1. It doesn't capture the local lexical environment, but instead
+   simply inserts a nil environment.
+
+2. It can only take a single expression.
+
+But if we don't need either of these things, the functions made by
+`fn-` work fine:
+
+    > ((fn- (x y) (cons x y)) 'a 'b)
+    (a . b)
+
+All the extra complexity in the definition of `fn` is to get those two 
+features, the local environment and a body of more than one 
+expression.
+
+### Closures
+
+A function with a lexical environment stored within it is called a 
+**closure**. That's why literal Bel functions begin `(lit clo ...)`; the
+`clo` is for "closure." If a closure includes an environment with a 
+value for `x`, then `x` will have a value within the closure even if it 
+isn't a parameter.
+
+So far the literal functions we've seen have had `nil` enviroments.
+Let's try making one by hand with some variable bindings in it. An 
+environment is a list of `(var . val)` pairs, so to make a closure we 
+put such a list in the third position of a `clo`, like this:
+
+    (lit clo ((x . a)) (y) (cons x y))
+
+This closure includes an environment in which `x` has the value `a`. It 
+has one parameter, `y`, and when called returns the value of `x` `cons`ed 
+onto whatever we give as an argument.
+
+    > ((lit clo ((x . a)) (y) (cons x y)) 'b)
+    (a . b)
+
+Notice that the `b` was all we passed to the function. The `a` came from
+within it.
+
+### More `fn`
+
+It turns out to be very useful if functions include the lexical 
+environment where they're created. And that is what the `fn` macro 
+does.
+
+In Bel you can get hold of the global and lexical environments using 
+the variables `globe` and `scope` respectively. So for example if we 
+define `foo` as
+
+    (def foo (x)
+      scope)
+
+then it will work something like this
+
+    > (foo 'a)
+    ((x . a))
+    > (foo 'b)
+    ((x . b))
+
+I say "something like" because a repl may have some variables of its 
+own, but we know that scope will at least have a value for `x`.
+
+If you compare the definitions of `fn-` and `fn`, you'll notice that
+while `fn-` expands into a `lit` expression, `fn` expands into a call to
+list that yields a `lit` expression. It works fine to use a call to
+`list` rather than an actual list in a function call; functions are 
+just lists after all.
+
+    > ((list 'lit 'clo nil '(x) '(+ x 1)) 2)
+    3
+
+The reason the definition of `fn` expands into a call to `list` is so 
+that we can incorporate the local environment, which we get by 
+including `scope` in the arguments to list.
+
+Here's an example where we do this manually:
+
+    (def bar (x)
+      ((list 'lit 'clo scope '(y) '(+ x y)) 2))
+
+Within `bar` we call a hand-made closure that includes `scope`, which, as
+we know from the example of foo above, will include a value for `x`.
+
+    > (bar 3)
+    5
+
+The `fn` macro generates as its expansion exactly what we just made by 
+hand. So this is equivalent to the definition above:
+
+    (def bar (x)
+      ((fn (y) (+ x y)) 2))
+
+The `fn` macro has two different expansions depending on how many 
+arguments we pass to it. That's so that functions can have bodies of
+more than one expression.
+
+If we call `fn` with two arguments, meaning a parameter list and an
+expression, as in e.g.
+
+    (fn (x) (cons 'a x))
+
+then `(cdr body)` will be false, so the expansion will be
+
+    (list 'lit 'clo scope '(x) '(cons 'a x))
+
+If we call `fn` with three or more arguments, meaning a parameter list 
+plus two or more expressions, e.g.
+
+    (fn (x) 
+      (prn 'hello) 
+      (cons 'a x))
+
+Then the expansion wraps a `do` around the expressions.
+
+    (list 'lit 'clo scope '(x) '(do (prn 'hello) (cons 'a x)))
+
+We haven't seen `do` yet, but it's coming soon. It makes multiple
+expressions into a block of code. 
 
