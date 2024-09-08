@@ -841,9 +841,9 @@ list:
      > `(a b ,@y e f)
     (a b c d e f)
 
-## Bel in Bel Source
+## Working with Lists
 
-(Actual code is shown in color, commentary in black and white. For a raw text
+(NOTE: Actual code is shown in color, commentary in black and white. For a raw text
 version of the original source code, see the link on [Paul Graham's page about Bel](https://www.paulgraham.com/bel.html "Bel - Paul Graham's website")).
 
 <Bel>
@@ -1308,6 +1308,8 @@ the arguments for `f`. And that's why we need the single-list base
 case. Without it, we'd get an infinite recursion.
 
 
+## Functions, Macros, Closures, `uvar`s, `do` Blocks, `let`
+
 <Bel>
 
     (mac <dfn>fn</dfn> (parms . body)
@@ -1655,6 +1657,8 @@ expression case, and making `fn` do it was the least ugly.
 
 <Bel>
 
+## Logical Operators = Control Flow
+
     (mac <dfn>or</dfn> args
       (if (no args)
           nil
@@ -1750,7 +1754,7 @@ arguments. While we want (or) to return nil, we want (and) to return
 
 <Bel>
 
-    (def = args
+    (def <dfn>=</dfn> args
       (if (no (cdr args))  t
           (some atom args) (all [id _ (car args)] (cdr args))
                           (and (apply = (map car args))
@@ -1793,6 +1797,8 @@ been simply
     (apply id args)
 
 
+## More Useful Predicates
+
 <Bel>
 
     (def <dfn>symbol</dfn> (x) (= (type x) 'symbol))
@@ -1804,9 +1810,9 @@ been simply
     (def <dfn>stream</dfn> (x) (= (type x) 'stream))
 </Bel>
 
-The next four functions are predicates for the four types. All use `=` 
-for this test even though all could use `id`. My rule is to use `=`
-unless I specifically need `id`. That way the appearance of `id` is a 
+The next four functions are predicates for the four types. All use `=`  for
+this test even though all could use `id`. My rule is to use `=` unless
+I specifically need `id`. That way the appearance of `id` is a 
 signal that code is looking for identical structure.
 
 
@@ -1845,6 +1851,9 @@ special notation: zero or more characters within double quotes.
     > (string "foo")
     t
 
+
+## Membership and More with Lists
+
 The next function, `mem`, tests for list membership.
 
     > (mem 'b '(a b c))
@@ -1857,3 +1866,580 @@ The next function, `mem`, tests for list membership.
 Since it uses `some`, it returns the rest of the list starting with the 
 thing we're looking for, rather than simply `t`.
 
+<Bel>
+
+    (def <dfn>mem</dfn> (x ys (o f =))
+      (some [f _ x] ys))
+</Bel>
+
+In the definition of `mem` we see the first use of an optional 
+parameter. If in a parameter list you see a list beginning with the 
+symbol `o`, then the parameter following the `o` is an optional one. It 
+can be followed by an expression, and if no value is supplied for the
+parameter in the call, it gets the value of that expression instead 
+(or `nil` if there isn't one). So
+
+    > ((fn (x (o y)) y) 'a)
+    nil
+    > ((fn (x (o y 'b)) y) 'a)
+    b
+
+The optional parameter doesn't have to be a single symbol; it can be 
+a full parameter list. An example will be easier to understand if we 
+use let:
+
+    > (let (x (o (y . z) '(a . b))) '(f)
+        (list x y z))
+    (f a b)
+
+In the definition of `mem`, the optional parameter is a comparison
+function, which defaults, as such functions usually will, to `=`.
+By supplying different comparison functions we can get different 
+behaviors out of `mem`.
+
+    > (mem 3 '(2 4 6 8) >)
+    (4 6 8)
+
+
+<Bel>
+
+    (def <dfn>in</dfn> (x . ys)
+      (mem x ys))
+</Bel>
+
+The next function, `in`, is effectively a generalization of `=`. It 
+returns true iff its first argument is `=` to any of the rest.
+
+
+<Bel>
+
+    (def <dfn>cadr</dfn>  (x) (car (cdr x)))
+      
+    (def <dfn>cddr</dfn>  (x) (cdr (cdr x)))
+      
+    (def <dfn>caddr</dfn> (x) (car (cddr x)))
+</Bel>
+
+Then come three common combinations of `car` and `cdr`: `cadr`, which gets 
+the second element of a list, `cddr`, which takes two elements off the 
+front, and `caddr`, which gets the third element. We'll have other ways 
+to do these things once we've defined numbers.
+
+## More Control Flow
+
+<Bel>
+
+    (mac <dfn>case</dfn> (expr . args)
+      (if (no (cdr args))
+          (car args)
+          (let v (uvar)
+            `(let ,v ,expr
+              (if (= ,v ',(car args))
+                  ,(cadr args)
+                  (case ,v ,@(cddr args)))))))
+</Bel>
+
+The `case` macro takes an initial expression `e`, followed by 
+alternating keys (which are implicitly quoted) and expressions, and 
+returns the result of evaluating the expression following the key 
+that's `=` to the value of `e`.
+
+If `case` is given an even number of arguments, the last one is the 
+default. Otherwise the default is `nil`.
+
+E.g. this function 
+
+    (def sname (s)
+      (case s 
+        + 'plus
+        - 'minus
+          'unknown))
+
+returns the name of a sign represented by a symbol:
+
+    > (sname '+)
+    plus
+
+
+<Bel>
+
+    (mac <dfn>iflet</dfn> (var . args)
+      (if (no (cdr args))
+          (car args)
+          (let v (uvar)
+            `(let ,v ,(car args)
+              (if ,v
+                  (let ,var ,v ,(cadr args))
+                  (iflet ,var ,@(cddr args)))))))
+</Bel>
+
+The `iflet` macro lets you use the result of a test in an `if`. It works 
+like an ordinary `if`, except that it takes an initial variable, which
+in any `then` expression will be lexically bound to the value returned 
+by the preceding test expression.
+
+    > (iflet x nil      'foo
+              '(a b c) (car x)
+                        'bar)
+    a
+
+Notice how similar the definitions of `case` and `iflet` are, despite 
+their different purposes. They're both recursive macros, like `or`, 
+and both work through their arguments two at a time.
+
+
+<Bel>
+
+    (mac <dfn>aif</dfn> args
+      `(iflet it ,@args))
+</Bel>
+
+We use `iflet` to define `aif`, which implicitly binds the variable `it`
+to the value of the preceding test expression.
+
+    > (map (fn (x)
+            (aif (cdr x) (car it)))
+          '((a) (b c) (d e f) (g)))
+    (nil c e nil)
+
+The function given to `map` here tests whether `x` has a non-`nil` `cdr`, 
+and if so returns the `car` of it.
+
+
+## Useful Predicates
+
+<Bel>
+
+    (def <dfn>find</dfn> (f xs)
+      (aif (some f xs) (car it)))
+</Bel>
+
+With `aif` and `some`, it's trivial to define `find`, which returns the
+first element of a list that matches some test.
+
+    > (find [= (car _) \a] 
+            '("pear" "apple" "grape"))
+    "apple"
+
+
+<Bel>
+
+    (def <dfn>begins</dfn> (xs pat (o f =))
+      (if (no pat)               t
+          (atom xs)              nil
+          (f (car xs) (car pat)) (begins (cdr xs) (cdr pat) f)
+                                 nil))
+</Bel>
+
+The begins function returns true iff its first argument is a list 
+that begins with its second argument:
+
+    > (begins '(a b c d e) '(a b))
+    t
+
+Like `mem`, it takes an optional comparison function that defaults 
+to `=`.
+
+
+<Bel>
+
+    (def <dfn>caris</dfn> (x y (o f =))
+      (begins x (list y) f))
+</Bel>
+
+It's used in `caris`, which returns true iff its first argument is a 
+pair whose `car` is its second.
+
+    > (caris '(a b) 'a)
+    t
+
+This is one of those functions you end up using surprisingly often, 
+because it's so common for the `car` of a list to have some special 
+significance.
+
+
+## Grouping using `hug`, and `with`, a multi-variable `let`
+
+<Bel>
+
+    (def <dfn>hug</dfn> (xs (o f list))
+      (if (no xs)       nil
+          (no (cdr xs)) (list (f (car xs)))
+                        (cons (f (car xs) (cadr xs))
+                              (hug (cddr xs) f))))
+</Bel>
+
+Our next function, `hug`, applies a function to pairs of elements of a 
+list. Since the default function is `list`, by default it simply 
+returns pairs of elements.
+
+    > (hug '(a b c d e))
+    ((a b) (c d) (e))
+    > (hug '(1 2 3 4 5) +)
+    (3 7 5)
+
+This too is something you need surprisingly often, especially when 
+operating on expressions, where it's common to have subexpressions 
+that form implicit pairs. We've seen this already in `if`, `case`, and 
+`iflet`, and we see it implemented with `hug` in the next macro, `with`.
+
+<Bel>
+
+    (mac <dfn>with</dfn> (parms . body)
+      (let ps (hug parms)
+        `((fn ,(map car ps) ,@body)
+          ,@(map cadr ps))))
+</Bel>
+
+Here is `with`, which is a multi-variable `let`.
+
+    > (with (x 'a 
+            y 'b) 
+        (cons x y))
+    (a . b)
+
+It binds the variables in parallel in the sense that the bindings of 
+previous variables are not visible in the expressions defining the 
+values of later ones.
+
+    > (let x 'a
+        (with (x 'b
+              y x)
+          y))
+    a
+
+## Lists as Stores
+
+<Bel>
+
+    (def <dfn>keep</dfn> (f xs)
+      (if (no xs)      nil
+          (f (car xs)) (cons (car xs) (keep f (cdr xs)))
+                       (keep f (cdr xs))))
+      
+    (def <dfn>rem</dfn> (x ys (o f =))
+      (keep [no (f _ x)] ys))
+
+</Bel>
+
+The next function, `keep`, returns all the elements of a list that pass 
+some test
+
+    > (keep odd '(1 2 3 4 5))
+    (1 3 5)
+
+and `rem` removes its first argument from a list
+
+    > (rem \a "abracadabra")
+    "brcdbr"
+
+or more precisely, since it takes an optional comparison function `f`, 
+all the elements of the list that fail `[f _ x]`, where `x` is the first 
+argument.
+
+    > (rem 4 '(5 3 1 2 4) >=)
+    (3 1 2)
+
+<Bel>
+
+    (def <dfn>get</dfn> (k kvs (o f =))
+      (find [f (car _) k] kvs))
+          
+    (def <dfn>put</dfn> (k v kvs (o f =))
+      (cons (cons k v)
+            (rem k kvs (fn (x y) (f (car x) y)))))
+</Bel>
+
+The next two functions, `get` and `put`, are for operating on key-value
+stores represented as lists of pairs like this one:
+
+    > (set x '((a . 1) (b . 2) (c . 3)))
+    ((a . 1) (b . 2) (c . 3))
+
+The first, `get`, retrieves entries,
+
+    > (get 'a x)
+    (a . 1)
+    > (get 'z x)
+    nil
+
+and the second, `put`, creates them.
+
+    > (put 'z 26 x)
+    ((z . 26) (a . 1) (b . 2) (c . 3))
+    > (put 'a 9 x)
+    ((a . 9) (b . 2) (c . 3))
+
+The reason `get` returns the whole pair instead of just the associated
+value is so that we can distinguish between a key having a value of 
+`nil` and having no value.
+
+Notice that `put` doesn't change the value of `x`, just as `cons`ing 
+something onto `x` wouldn't change the value of it. 
+
+## Useful List Operators and the Identity Function, `idfn`
+
+<Bel>
+
+    (def <dfn>rev</dfn> (xs)
+      (if (no xs)
+          nil
+          (snoc (rev (cdr xs)) (car xs))))
+      
+    (def <dfn>snap</dfn> (xs ys (o acc))
+      (if (no xs)
+          (list acc ys)
+          (snap (cdr xs) (cdr ys) (snoc acc (car ys)))))
+</Bel>
+
+The function `rev` reverses a list,
+
+    > (rev "able")
+    "elba"
+
+and `snap` breaks off a piece of its second argument that's as long as
+its first, returning both parts:
+
+    > (snap '(a b) '(1 2 3 4 5))
+    ((1 2) (3 4 5))
+
+<Bel>
+
+    (def <dfn>udrop</dfn> (xs ys)
+      (cadr (snap xs ys)))
+</Bel>
+
+It's used in `udrop` (for "unary drop"), which returns just the 
+remaining part:
+
+    > (udrop '(a b) '(1 2 3 4 5))
+    (3 4 5)
+
+<Bel>
+
+    (def <dfn>idfn</dfn> (x)
+      x)
+</Bel>
+
+Then we get the identity function, `idfn`:
+
+    > (map idfn '(a b c))
+    (a b c)
+
+You wouldn't call this directly (why bother?) but you often end up
+using it as a default or when operating on functions.
+
+
+<Bel>
+
+    (def <dfn>is</dfn> (x)
+      [= _ x])
+</Bel>
+
+The function `is` is a little unusual in that it returns a function for
+comparing its argument to something. 
+
+    > ((is 'a) 'a)
+    t
+
+An `is` is a partially applied `=`, so in principle we won't need it 
+after we define partial application later on. But this case is so
+common that it's convenient to have a separate operator for it.
+
+## Error Handling
+
+<Bel>
+
+    (mac <dfn>eif</dfn> (var (o expr) (o fail) (o ok))
+      (with (v (uvar)
+            w (uvar)
+            c (uvar))
+        `(let ,v (join)
+          (let ,w (ccc (fn (,c)
+                          (dyn err [,c (cons ,v _)] ,expr)))
+            (if (caris ,w ,v id)
+                 (let ,var (cdr ,w) ,fail)
+                 (let ,var ,w ,ok))))))
+</Bel>
+
+Now come several macros for dealing with errors. The first, `eif`,
+introduces several new concepts, so I'll explain them first, then `eif`  itself.
+
+One thing we see being used for the first time here is *dynamic 
+binding*. To show how it works, we'll define a function that refers to 
+a variable with no global value:
+
+    (def foo ()
+      snerg)
+
+If we call `foo` normally, we'll get an error saying `snerg` has no 
+value. But if we call `foo` within a `dyn` expression that creates a
+dynamic binding for `snerg`, it will work:
+
+    > (dyn snerg 'a 
+        (foo))
+    a
+
+We couldn't get the same result by saying
+
+    (let snerg 'a
+      (foo))
+
+because a lexical binding created by `let` (or more precisely by a
+function call) is only visible within its body. And whereas lexical 
+bindings get saved in closures (as in e.g. `is`), dynamic bindings, 
+like global ones, don't.
+
+### Continuations and `ccc`
+
+Another concept we're seeing for the first time is that of a  **continuation**.
+A continuation is basically a computation in the middle 
+of happening. (Or more prosaically, it's a copy of the stack.) A 
+continuation is callable, like a function, and if you call one, you 
+restart the computation where it was created.
+
+You can get your hands on the current continuation by calling the `ccc` special
+form with a function of one argument. It will be the current 
+continuation, which you can then save. Let's try making one.
+
+Here's some simple code that makes a list:
+
+    > (list 'a 'b)
+    (a b)
+
+Now let's try replacing the `'b` with an expression that saves the 
+current continuation before returning `b`:
+
+    > (list 'a (ccc (fn (c) 
+                      (set cont c) 
+                      'b)))
+    (a b)
+
+It returns the same value, but in the process we've set `cont` to the
+continuation at the point where the `ccc` occurred. If we call `cont` 
+with some value, our old computation will be restarted as if that 
+value had been returned by the `ccc` expression:
+
+    > (cont 'z)
+    (a z)
+
+Continuations work any number of times:
+
+    > (cont 'w)
+    (a w)
+
+One thing we can use continuations for is aborting computations. If 
+we save a continuation before starting something, then by calling the 
+continuation we can escape from the middle of it.
+
+    > (ccc (fn (c) 
+            (dyn abort c 
+               (do (abort 'a)
+                   (car 'b)))))
+    a
+
+Here we bind `abort` to the continuation before we start evaluating the 
+do expression. The second expression within the `do`
+
+    (car 'b)
+
+would cause an error if it were evaluated. But we never get to it, 
+because we call abort first.
+
+When an error occurs, `err` is called on a value representing the
+error. So if the variable that we dynamically bind is `err` instead of
+`abort`, we can take over what happens when an error is signalled.
+
+Here we rebind `err` to return `hello` when an error occurs:
+
+    > (ccc (fn (c) 
+            (dyn err (fn (x) (c 'hello))
+              (car 'b))))
+    hello
+
+This time the `car` expression does get evaluated, which causes an 
+error to be signalled. But by establishing a dynamic binding for
+`err`, we've ensured that it's our function that gets called when the
+error is signalled. And our function simply returns hello from the 
+`ccc` expression.
+
+You can probably imagine how you'd write a macro to evaluate an 
+expression in an error-proof way: just make the expansion put the
+expression within something like
+
+    (ccc (fn (c)
+          (dyn err (fn (x) (c nil))
+            expression)))
+
+except of course you'd want to use a `uvar` instead of `c`.
+
+Now let's look at `eif`. It's like `if` except that which of its 
+arguments get evaluated depends not on whether its test expression
+returns true, but whether it causes an error.
+
+    > (eif x (car 'a)
+            'oops
+            x)
+    oops
+    > (eif x (car '(a b))
+            'oops
+            x)
+    a
+
+The variable before the test expression (in this case `x`) will be 
+lexically bound either to the value returned by the test expression, 
+or to whatever `err` was called with if an error occurred.
+
+The expansion of the first `eif` above looks like
+
+    (let v (join)
+      (let w (ccc (fn (c)
+                    (dyn err [c (cons v _)] (car 'a))))
+        (if (caris w v id)
+            (let x (cdr w) 'oops)
+            (let x w x))))
+
+except of course `v`, `w`, and `c` will be `uvars`. When we look at the code
+above, we can see how `eif` tells whether the value it got back from 
+the test expression represents an error or not. The variable `v` is 
+bound to a newly created pair. Within the continuation, `err` is bound 
+to a function that returns `v` `cons`ed onto whatever `err` was called 
+with. So to decide which of the two succeeding expressions to
+evaluate, we just check whether the `car` of `w` is `v`. (And of course we 
+check using `id`, not `=`.)
+
+<Bel>
+
+    (mac <dfn>onerr</dfn> (e1 e2)
+      (let v (uvar)
+        `(eif ,v ,e2 ,e1 ,v)))
+      
+    (mac <dfn>safe</dfn> (expr)
+      `(onerr nil ,expr))
+</Bel>
+
+The `eif` macro is the most general error-catching macro, but there
+are two more, `onerr` and `safe`, that are more commonly used. The
+`onerr` macro takes two expressions and returns the value of the first
+if the second causes an error:
+
+    > (onerr 'oops (car 'a))
+    oops
+
+and the `safe` macro simply returns `nil` if the expression within
+it causes an error:
+
+    > (safe (car '(a b)))
+    a
+    > (safe (car 'a))
+    nil
+
+## Interpreting Bel in Bel
+
+<Bel></Bel>
+<Bel></Bel>
+<Bel></Bel>
+<Bel></Bel>
+<Bel></Bel>
+<Bel></Bel>
+<Bel></Bel>
