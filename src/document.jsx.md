@@ -1,12 +1,11 @@
-<Row>
-<Col>
-
 # The Bel Language
 
-### Paul Graham, 12 Oct 2019
+### [Paul Graham](https://www.paulgraham.com/bel.html "Bel - Paul Graham's website")
+### 12 Oct 2019
 
-In 1960 John McCarthy described a new type of programming language
-called Lisp. I say "new type" because Lisp represented not just a new
+In 1960 [John McCarthy described a new type of programming language
+called Lisp](https://paulgraham.com/rootsoflisp.html "The Roots of Listp - Paul Graham's website").
+I say "new type" because Lisp represented not just a new
 language but a new way of describing languages. He defined Lisp by 
 starting with a small set of operators, akin to axioms, and then 
 using them to write an interpreter for the language in itself.
@@ -835,27 +834,17 @@ list:
     (c d)
      > `(a b ,@y e f)
     (a b c d e f)
-</Col>
-</Row>
 
-<Row>
-<Col>
+## Bel in Bel Source
 
-## Bel Source Code Explained
-### The Commentary
-</Col>
-<Col>
+(Actual code is shown in color, commentary in black and white. For a raw text
+version of the original source code, see the link on [Paul Graham's page about Bel](https://www.paulgraham.com/bel.html "Bel - Paul Graham's website")).
 
-## Bel in Bel
-### The Code
-</Col>
-</Row>
+<Bel>
 
-
-
-
-<Row>
-<Col>
+    (def <dfn>no</dfn> (x)
+      (id x nil))
+</Bel>
 
 Now let's look at the source. The first expression defines a function
 no that takes one argument, `x`, and returns the result of using `id` to
@@ -869,18 +858,12 @@ otherwise.
 
 Since `nil` represents both falsity and the empty list, `no` is both
 logical negation and the test for the empty list.
-</Col>
-<Col>
 
-    (def no (x)
-      (id x nil))
-</Col>
-</Row>
+<Bel>
 
-
-
-<Row>
-<Col>
+    (def <dfn>atom</dfn> (x)
+      (no (id (type x) 'pair)))
+</Bel>
 
 The second function, `atom`, returns true [iff](https://en.wikipedia.org/wiki/If_and_only_if) its argument is not a 
 pair. 
@@ -893,10 +876,227 @@ pair.
     t
     > (atom '(a))
     nil
-</Col>
-<Col>
 
-    (def atom (x)
-      (no (id (type x) 'pair)))
-</Col>
-</Row>
+<Bel>
+
+    (def <dfn>all</dfn> (f xs)
+      (if (no xs)      t
+          (f (car xs)) (all f (cdr xs))
+                       nil))
+
+    (def <dfn>some</dfn> (f xs)
+      (if (no xs)      nil
+          (f (car xs)) xs
+                       (some f (cdr xs))))
+</Bel>
+
+Next come a pair of similar functions, all and some. The former 
+returns t iff its first argument returns true of all the elements of 
+its second,
+
+    > (all atom '(a b))
+    t
+    > (all atom nil)
+    t
+    > (all atom '(a (b c) d))
+    nil
+ 
+and the latter returns true iff its first argument returns true of 
+any element of its second. However, when some returns true, it 
+doesn't simply return `t`. It returns the remainder of the list 
+starting from the point where `f` was true of the first element. 
+
+    > (some atom '((a b) (c d)))
+    nil
+    > (some atom '((a b) c (d e)))
+    (c (d e))
+
+Logically, any value except `nil` counts as truth, so why not return 
+the most informative result you can?
+
+In all and some we see the first use of `if`. Translated into English, 
+the definition of all might be:
+
+> If `xs` is empty, then return `t`. 
+
+> Otherwise if `f` returns true of the first element, return the result 
+> of calling all on `f` and the remaining elements. 
+
+> Otherwise (in which case `xs` has at least one element of which `f`
+> returns false), return `nil`.
+
+This technique of doing something to the `car` of a list and then 
+perhaps continuing down the `cdr` is very common.
+
+Something else is new in `all` and `some`: these are the first functions
+in the Bel source that you could cause an error by calling.
+
+    > (all atom 'a)
+    Error: can't call car on a non-nil atom.
+
+I made up that error message; Bel doesn't specify more about errors
+in primitives than when they occur, and doesn't specify anything 
+about repls. But some error will be signalled if you call `all` with a
+non-nil atom as the second argument, because in the second test 
+within the if
+
+    (f (car xs))
+
+`car` is called on it, and it's an error to call `car` on anything except
+a pair or `nil`.
+
+One other thing to note about these definitions, now that we're
+getting to more complex ones: these functions are not defined the
+way they would be in idiomatic Bel. For example, if all didn't 
+already exist in Bel you could define it as simply
+
+    (def all (f xs)
+      (~some ~f xs))
+
+But since we haven't defined functional composition yet, I didn't use 
+it.
+
+<Bel>
+
+    (def <dfn>reduce</dfn> (f xs)
+      (if (no (cdr xs))
+          (car xs)
+          (f (car xs) (reduce f (cdr xs)))))
+</Bel>
+
+The next function, reduce, is for combining the elements of its 
+second argument using nested calls to its first. For example 
+
+    (reduce f '(a b c d))
+
+is equivalent to
+
+    (f 'a (f 'b (f 'c 'd)))
+
+If `xs` has only one element, reduce returns it, and if it's empty,
+`reduce` returns `nil`; since `(cdr nil)` is `nil`, we can check both these 
+possibilities with `(no (cdr xs))`. Otherwise it calls `f` on the first
+element and `reduce` of `f` and the remaining elements.
+
+    > (reduce join '(a b c))
+    (a b . c)
+
+This is not the only way to reduce a list. Later we'll define two 
+more, `foldl` and `foldr`.
+
+### Indenting `if`s
+
+The definition of reduce shows another way of indenting `if`s. 
+Indentation isn't significant in Bel and only matters insofar as 
+it helps humans read your code, but I've found three ways of 
+indenting `if`s that work well. If an `if` has more than two tests and 
+the arguments are sufficiently short, it works well to say
+
+    (if test1 then1
+        test2 then2
+              else)
+
+We saw this in all and some. But if you only have one test, or some 
+arguments are too long to fit two on one line, then it works better 
+to say
+
+    (if test1
+        then1
+        test2
+        then2
+        else)
+
+or if an `if` is long, 
+
+    (if test1
+         then1
+        test2
+         then2
+        test3
+         then3
+         else)
+
+<Bel>
+
+    (def <dfn>cons</dfn> args
+      (reduce join args))
+</Bel>
+
+The next function, `cons`, has the name that `join` had in McCarthy's
+Lisp. It's the function you use to put things on the front of a list.
+
+    > (cons 'a '(b c))
+    (a b c)
+
+If you only want to put one thing on the front of a list, you could
+use `join`.
+
+    > (join 'a '(b c))
+    (a b c)
+
+With `cons`, however, you can supply more than one thing to put on the
+front:
+
+    > (cons 'a 'b 'c '(d e f))
+    (a b c d e f)
+
+Since `cons` is a generalization of `join`, it's rare to see `join` in
+programs.
+
+### Function parameter forms
+
+We see something new in the definition of `cons`: it has a single 
+parameter, args, instead of a list of parameters. When a function has 
+a single parameter, its value will be a list of all the arguments 
+supplied when the function is called. So if we call `cons` thus
+
+    (cons 'a 'b '(c d))
+
+the value of `args` will be
+
+    (a b (c d))
+
+The parameter list of a Bel function can be a tree of any shape. If 
+the arguments in the call match its shape, the parameters will get 
+the corresponding values; otherwise an error is signalled.
+
+So for example if a function `f` has the parameter list
+
+    (x . y) 
+
+and it's called
+
+    (f 'a 'b 'c)
+
+then `x` will be `a`, and `y` will be `(b c)`.
+
+If the same function is called
+
+    (f 'a)
+
+then `x` will be `a`, and `y` will be `nil`. And if it's called
+
+    (f)
+
+you'll get an error because there is no value for `x`.
+
+If a function `f` has the parameter list 
+
+    ((x y) z)
+
+and is called
+
+    (f '(a (b c)) '(d))
+
+then `x` will be a, `y` will be `(b c)`, and `z` will be `(d)`. Whereas if it's 
+called
+
+    (f '(a) '(d))
+
+you'll get an error because there is no value for `y`, and if it's 
+called
+
+    (f '(a b c) '(d))
+
+you'll get an error because there is no parameter for `c`.
+

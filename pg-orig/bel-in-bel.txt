@@ -1,29 +1,29 @@
-; Bel in Bel. 9 October 2019, 9:14 GMT
+﻿; Bel in Bel. 9 October 2019, 9:14 GMT
 
 
-(def no (x)
-  (id x nil))
+    (def no (x)
+      (id x nil))
 
-(def atom (x)
-  (no (id (type x) 'pair)))
+    (def atom (x)
+      (no (id (type x) 'pair)))
 
-(def all (f xs)
-  (if (no xs)      t
-      (f (car xs)) (all f (cdr xs))
-                   nil))
+    (def all (f xs)
+      (if (no xs)      t
+          (f (car xs)) (all f (cdr xs))
+                       nil))
 
-(def some (f xs)
-  (if (no xs)      nil
-      (f (car xs)) xs
-                   (some f (cdr xs))))
+    (def some (f xs)
+      (if (no xs)      nil
+          (f (car xs)) xs
+                       (some f (cdr xs))))
 
-(def reduce (f xs)
-  (if (no (cdr xs))
-      (car xs)
-      (f (car xs) (reduce f (cdr xs)))))
+    (def reduce (f xs)
+      (if (no (cdr xs))
+          (car xs)
+          (f (car xs) (reduce f (cdr xs)))))
 
-(def cons args
-  (reduce join args))
+    (def cons args
+      (reduce join args))
 
 (def append args
   (if (no (cdr args)) (car args)
@@ -1798,3 +1798,4 @@
     (if (id v eof)  nil
         (isa!tab v) (inst name (cddr v))
                     (err 'inst-nontable))))
+

@@ -189,8 +189,12 @@ body {
     padding-right: 1rem;
     margin-left: auto;
     margin-right: auto;
-    width: 80rem;
+    width: 40rem;
 }
+
+/* hr {
+  margin-top: 2rem;
+} */
 
 h2 {
     border-top: 1px solid #ccc;
@@ -217,7 +221,7 @@ code {
 
 pre code {
   margin: 0;
-  margin-left: -6rem;
+  margin-left: -3rem;
   margin-top: 1rem;
   display: inline-block;
 }
@@ -233,6 +237,7 @@ h3 {
   text-transform: uppercase;
   font-weight: 700;
   font-size: 105%;
+  margin-top: 1.5rem;
 }
 
 td.tbl-col {
@@ -241,3 +246,17 @@ td.tbl-col {
   width: 39rem;
 }
 
+div.bel-code pre {
+  margin-top: 3rem;
+}
+
+div.bel-code pre,
+div.bel-code pre code{
+  background-color: #262;
+  color: #6f6;
+}
+
+dfn {
+  color: white !important;
+  font-weight: 700;
+}
