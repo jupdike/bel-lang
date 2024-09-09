@@ -2464,7 +2464,7 @@ an ordinary symbol or a uvar:
 
 <Bel>
 
-    (def <defn>isa</defn> (name)
+    (def <dfn>isa</dfn> (name)
       [begins _ `(lit ,name) id])
 </Bel>
 
