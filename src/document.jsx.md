@@ -2453,8 +2453,8 @@ it causes an error:
 The next function, `literal`, returns true iff its argument evaluates 
 to itself,
 
-  > (map literal (list nil "foo" car))
-  (t t t)
+    > (map literal (list nil "foo" car))
+    (t t t)
 
 while `variable` returns true iff its argument is a `variable`, meaning
 an ordinary symbol or a uvar:
@@ -2494,8 +2494,7 @@ Each thread is a list
 
     (s r)
 
-of two stacks: a stack `s` of expressions to be evaluated, and a stack 
-`r` of return values.
+of two stacks: a stack `s` of expressions to be evaluated, and a stack `r` of return values.
 
 Each element of `s` is in turn a list
 
